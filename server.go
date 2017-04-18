@@ -158,9 +158,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.handleHTTP(w, r); err != nil {
-		if !strings.Contains(err.Error(), "no virtual host available") { // this one is outputted too much, unnecessarily
-			s.log.Error("remote %s (%s): %s", r.RemoteAddr, r.RequestURI, err)
-		}
+		s.log.Error("serve failed", "remote", r.RemoteAddr, "path", r.RequestURI, "error", err)
 		http.Error(w, err.Error(), 502)
 	}
 }
