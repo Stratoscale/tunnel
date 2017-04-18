@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/koding/logging"
-	"github.com/koding/tunnel/proto"
+	"github.com/Stratoscale/tunnel/proto"
 )
 
 // ProxyFunc is responsible for forwarding a remote connection to local server and writing the response back.

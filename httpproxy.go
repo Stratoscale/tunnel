@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/koding/logging"
-	"github.com/koding/tunnel/proto"
+	"github.com/Stratoscale/tunnel/proto"
 )
 
 var (

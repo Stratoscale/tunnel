@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/koding/logging"
-	"github.com/koding/tunnel/proto"
+	"github.com/Stratoscale/tunnel/proto"
 
 	"github.com/hashicorp/yamux"
 )
@@ -509,7 +509,7 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	}
 
 	ct := newControl(stream)
-	c.log.Debug("client has started successfully")
+	c.log.Debug("client has started successfully.")
 	c.redialBackoff.Reset() // we successfully connected, so we can reset the backoff
 
 	c.startNotifyIfNeeded()
@@ -545,7 +545,9 @@ func (c *Client) listenControl(ct *control) error {
 		c.log.Debug("Received control msg %+v", msg)
 		c.log.Debug("Opening a new stream from server session")
 
+
 		remote, err := c.session.Open()
+
 		if err != nil {
 			return err
 		}

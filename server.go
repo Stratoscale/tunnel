@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/koding/logging"
-	"github.com/koding/tunnel/proto"
+	"github.com/Stratoscale/tunnel/proto"
 
 	"github.com/hashicorp/yamux"
 )

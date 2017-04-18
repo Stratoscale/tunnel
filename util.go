@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/koding/tunnel/proto"
+	"github.com/Stratoscale/tunnel/proto"
 
 	"github.com/cenkalti/backoff"
 )
