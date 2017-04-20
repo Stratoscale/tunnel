@@ -9,7 +9,6 @@ import (
 
 	"github.com/Stratoscale/tunnel"
 	"github.com/Stratoscale/tunnel/tunneltest"
-
 	"github.com/cenkalti/backoff"
 )
 
