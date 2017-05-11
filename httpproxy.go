@@ -60,8 +60,8 @@ func (p *HTTPProxy) Proxy(remote net.Conn, msg *proto.ControlMessage) {
 	} else if p.FetchLocalAddr != nil {
 		l, err := p.FetchLocalAddr(msg.LocalPort)
 		if err != nil {
-			log.Warning("Failed to get custom local address: %s", err)
-			p.sendError(remote)
+			log.Error("Access denied, local service on port %d not in the list: %s", port, err)
+			p.sendStatusForbiddden(remote)
 			return
 		}
 		localAddr = l
@@ -76,6 +76,27 @@ func (p *HTTPProxy) Proxy(remote net.Conn, msg *proto.ControlMessage) {
 	}
 
 	Join(local, remote, log)
+}
+
+func (p *HTTPProxy) sendStatusForbiddden(remote net.Conn){
+	body := bytes.NewBufferString("Access Denied to local service or service does not exist")
+	resp := &http.Response{
+		Status:        http.StatusText(http.StatusForbidden),
+		StatusCode:    http.StatusForbidden,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(body),
+		ContentLength: int64(body.Len()),
+	}
+
+	buf := new(bytes.Buffer)
+	resp.Write(buf)
+	if _, err := io.Copy(remote, buf); err != nil {
+		var log = p.log()
+		log.Debug("copy in-mem response error: %s", err)
+	}
+	remote.Close()
 }
 
 func (p *HTTPProxy) sendError(remote net.Conn) {
