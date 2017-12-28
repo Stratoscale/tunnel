@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/koding/logging"
+	"context"
 )
 
 //go:generate stringer -type ClientState
@@ -140,13 +141,7 @@ type ClientConfig struct {
 	// Log defines the logger. If nil a default logging.Logger is used.
 	Log logging.Logger
 
-	// Dial provides custom transport layer for client server communication.
-	//
-	// If nil, default implementation is to return net.Dial("tcp", address).
-	//
-	// It can be used for connection monitoring, setting different timeouts or
-	// securing the connection.
-	Dial func(network, address string) (net.Conn, error)
+	Transport *http.Transport
 
 	// StateChanges receives state transition details each time client
 	// connection state changes. The channel is expected to be sufficiently
@@ -203,6 +198,10 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	log := newLogger("tunnel-client", cfg.Debug)
 	if cfg.Log != nil {
 		log = cfg.Log
+	}
+
+	if cfg.Transport == nil {
+		cfg.Transport = http.DefaultTransport.(*http.Transport)
 	}
 
 	if err := cfg.verify(); err != nil {
@@ -411,7 +410,7 @@ func (c *Client) isRetry(state ClientState) bool {
 func (c *Client) connect(identifier, serverAddr string) error {
 	c.log.Debug("Trying to connect to %q with identifier %q", serverAddr, identifier)
 
-	conn, err := c.dial(serverAddr)
+	conn, err := c.config.Transport.DialContext(context.TODO(), "tcp", serverAddr)
 	if err != nil {
 		return err
 	}
@@ -495,14 +494,6 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	c.startNotifyIfNeeded()
 
 	return c.listenControl(ct)
-}
-
-func (c *Client) dial(serverAddr string) (net.Conn, error) {
-	if c.config.Dial != nil {
-		return c.config.Dial("tcp", serverAddr)
-	}
-
-	return net.Dial("tcp", serverAddr)
 }
 
 func (c *Client) listenControl(ct *control) error {
