@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stratoscale/tunnel"
+	"github.com/Stratoscale/tunnel"
 )
 
 var (
