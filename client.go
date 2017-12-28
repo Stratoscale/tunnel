@@ -1,7 +1,6 @@
 package tunnel
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/koding/logging"
+	"context"
 )
 
 //go:generate stringer -type ClientState
@@ -95,6 +95,7 @@ type Client struct {
 	redialBackoff Backoff
 
 	state ClientState
+	conn *net.Conn
 }
 
 // ClientConfig defines the configuration for the Client
@@ -140,13 +141,7 @@ type ClientConfig struct {
 	// Log defines the logger. If nil a default logging.Logger is used.
 	Log logging.Logger
 
-	// Dial provides custom transport layer for client server communication.
-	//
-	// If nil, default implementation is to return net.Dial("tcp", address).
-	//
-	// It can be used for connection monitoring, setting different timeouts or
-	// securing the connection.
-	Dial func(network, address string) (net.Conn, error)
+	Transport *http.Transport
 
 	// StateChanges receives state transition details each time client
 	// connection state changes. The channel is expected to be sufficiently
@@ -203,6 +198,10 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	log := newLogger("tunnel-client", cfg.Debug)
 	if cfg.Log != nil {
 		log = cfg.Log
+	}
+
+	if cfg.Transport == nil {
+		cfg.Transport = http.DefaultTransport.(*http.Transport)
 	}
 
 	if err := cfg.verify(); err != nil {
@@ -408,15 +407,26 @@ func (c *Client) isRetry(state ClientState) bool {
 	return state != ClientStarted && state != ClientClosed
 }
 
+type dialFunc func (ctx context.Context, network, addr string) (net.Conn, error)
+
+func copyTransport(transport http.Transport) http.Transport {
+	return transport
+}
+
 func (c *Client) connect(identifier, serverAddr string) error {
 	c.log.Debug("Trying to connect to %q with identifier %q", serverAddr, identifier)
-
-	conn, err := c.dial(serverAddr)
-	if err != nil {
-		return err
+	var conn net.Conn
+	wrap := func(inner dialFunc) dialFunc {
+		return func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var err error
+			conn, err = inner(ctx, network, addr)
+			return conn, err
+		}
 	}
+	transport := copyTransport(*c.config.Transport)
+	transport.DialContext = wrap(c.config.Transport.DialContext)
 
-	remoteUrl := controlUrl(conn)
+	remoteUrl := serverAddr + controlPath
 	c.log.Debug("CONNECT to %q", remoteUrl)
 	req, err := http.NewRequest("CONNECT", remoteUrl, nil)
 	if err != nil {
@@ -427,15 +437,9 @@ func (c *Client) connect(identifier, serverAddr string) error {
 
 	c.log.Debug("Writing request to TCP: %+v", req)
 
-	if err := req.Write(conn); err != nil {
-		return fmt.Errorf("writing CONNECT request to %s failed: %s", req.URL, err)
-	}
-
-	c.log.Debug("Reading response from TCP")
-
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
-		return fmt.Errorf("reading CONNECT response from %s failed: %s", req.URL, err)
+		return fmt.Errorf("writing CONNECT request to %s failed: %s", req.URL, err)
 	}
 	defer resp.Body.Close()
 
@@ -495,14 +499,6 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	c.startNotifyIfNeeded()
 
 	return c.listenControl(ct)
-}
-
-func (c *Client) dial(serverAddr string) (net.Conn, error) {
-	if c.config.Dial != nil {
-		return c.config.Dial("tcp", serverAddr)
-	}
-
-	return net.Dial("tcp", serverAddr)
 }
 
 func (c *Client) listenControl(ct *control) error {

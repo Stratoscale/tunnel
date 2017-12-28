@@ -175,7 +175,7 @@ func TestNoHost(t *testing.T) {
 
 	unknown, err := tunnel.NewClient(&tunnel.ClientConfig{
 		Identifier: "unknown",
-		ServerAddr: tt.ServerAddr().String(),
+		ServerAddr: "http://"+tt.ServerAddr().String(),
 		Backoff:    noBackoff,
 		Debug:      testing.Verbose(),
 	})
