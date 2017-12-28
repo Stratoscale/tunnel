@@ -11,10 +11,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"context"
 
 	"github.com/hashicorp/yamux"
 	"github.com/koding/logging"
-	"context"
 )
 
 //go:generate stringer -type ClientState
@@ -95,7 +95,6 @@ type Client struct {
 	redialBackoff Backoff
 
 	state ClientState
-	conn *net.Conn
 }
 
 // ClientConfig defines the configuration for the Client
@@ -409,21 +408,21 @@ func (c *Client) isRetry(state ClientState) bool {
 
 type dialFunc func (ctx context.Context, network, addr string) (net.Conn, error)
 
-func copyTransport(transport http.Transport) http.Transport {
-	return transport
-}
-
 func (c *Client) connect(identifier, serverAddr string) error {
 	c.log.Debug("Trying to connect to %q with identifier %q", serverAddr, identifier)
-	var conn net.Conn
+	var (
+		conn net.Conn
+		connSet = make(chan struct{})
+	)
 	wrap := func(inner dialFunc) dialFunc {
 		return func(ctx context.Context, network, addr string) (net.Conn, error) {
 			var err error
 			conn, err = inner(ctx, network, addr)
+			close(connSet)
 			return conn, err
 		}
 	}
-	transport := copyTransport(*c.config.Transport)
+	transport := *c.config.Transport // copy transport
 	transport.DialContext = wrap(c.config.Transport.DialContext)
 
 	remoteUrl := serverAddr + controlPath
@@ -453,6 +452,7 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	}
 
 	c.ctrlWg.Wait() // wait until previous listenControl observes disconnection
+	<- connSet
 
 	c.session, err = yamux.Client(conn, c.yamuxConfig)
 	if err != nil {
