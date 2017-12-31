@@ -268,7 +268,7 @@ func (tt *TunnelTest) serveSingle(ident string, t *Tunnel) (bool, error) {
 
 	cfg := &tunnel.ClientConfig{
 		Identifier:     ident,
-		ServerAddr:     "http://"+tt.ServerAddr().String(),
+		ServerAddr:     tt.ServerAddr().String(),
 		LocalAddr:      l.Addr().String(),
 		FetchLocalAddr: tt.fetchLocalAddr,
 		Debug:          testing.Verbose(),

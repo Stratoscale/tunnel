@@ -409,7 +409,8 @@ func (c *Client) isRetry(state ClientState) bool {
 type dialFunc func (ctx context.Context, network, addr string) (net.Conn, error)
 
 func (c *Client) connect(identifier, serverAddr string) error {
-	c.log.Debug("Trying to connect to %q with identifier %q", serverAddr, identifier)
+	remoteUrl := "https://" + serverAddr + controlPath
+	c.log.Debug("Trying to connect to %q with identifier %q", remoteUrl, identifier)
 	var (
 		conn net.Conn
 		connSet = make(chan struct{})
@@ -425,16 +426,11 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	transport := *c.config.Transport // copy transport
 	transport.DialContext = wrap(c.config.Transport.DialContext)
 
-	remoteUrl := serverAddr + controlPath
-	c.log.Debug("CONNECT to %q", remoteUrl)
 	req, err := http.NewRequest("CONNECT", remoteUrl, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request to %s: %s", remoteUrl, err)
 	}
-
 	req.Header.Set(xKTunnelIdentifier, identifier)
-
-	c.log.Debug("Writing request to TCP: %+v", req)
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
