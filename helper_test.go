@@ -14,8 +14,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/stratoscale/tunnel"
-	"github.com/stratoscale/tunnel/tunneltest"
+	"github.com/Stratoscale/tunnel"
+	"github.com/Stratoscale/tunnel/tunneltest"
 
 	"github.com/gorilla/websocket"
 )

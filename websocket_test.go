@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stratoscale/tunnel/tunneltest"
+	"github.com/Stratoscale/tunnel/tunneltest"
 )
 
 func testWebsocket(name string, n int, t *testing.T, tt *tunneltest.TunnelTest) {

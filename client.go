@@ -1,7 +1,6 @@
 package tunnel
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -140,13 +140,7 @@ type ClientConfig struct {
 	// Log defines the logger. If nil a default logging.Logger is used.
 	Log logging.Logger
 
-	// Dial provides custom transport layer for client server communication.
-	//
-	// If nil, default implementation is to return net.Dial("tcp", address).
-	//
-	// It can be used for connection monitoring, setting different timeouts or
-	// securing the connection.
-	Dial func(network, address string) (net.Conn, error)
+	Transport *http.Transport
 
 	// StateChanges receives state transition details each time client
 	// connection state changes. The channel is expected to be sufficiently
@@ -203,6 +197,10 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	log := newLogger("tunnel-client", cfg.Debug)
 	if cfg.Log != nil {
 		log = cfg.Log
+	}
+
+	if cfg.Transport == nil {
+		cfg.Transport = http.DefaultTransport.(*http.Transport)
 	}
 
 	if err := cfg.verify(); err != nil {
@@ -409,33 +407,33 @@ func (c *Client) isRetry(state ClientState) bool {
 }
 
 func (c *Client) connect(identifier, serverAddr string) error {
-	c.log.Debug("Trying to connect to %q with identifier %q", serverAddr, identifier)
+	remoteUrl := "https://" + serverAddr + controlPath
+	c.log.Debug("Trying to connect to %q with identifier %q", remoteUrl, identifier)
+	var (
+		conn    net.Conn
+		connSet = make(chan struct{})
+	)
 
-	conn, err := c.dial(serverAddr)
-	if err != nil {
-		return err
-	}
-
-	remoteUrl := controlUrl(conn)
-	c.log.Debug("CONNECT to %q", remoteUrl)
 	req, err := http.NewRequest("CONNECT", remoteUrl, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request to %s: %s", remoteUrl, err)
 	}
-
 	req.Header.Set(xKTunnelIdentifier, identifier)
 
-	c.log.Debug("Writing request to TCP: %+v", req)
+	// Hijack the connection from the client.
+	// When the transport finishes the connection, we save the connection in a local
+	// variable Conn.
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			c.log.Debug("Got Conn: %+v", connInfo)
+			conn = connInfo.Conn
+			close(connSet)
+		},
+	}))
 
-	if err := req.Write(conn); err != nil {
-		return fmt.Errorf("writing CONNECT request to %s failed: %s", req.URL, err)
-	}
-
-	c.log.Debug("Reading response from TCP")
-
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	resp, err := c.config.Transport.RoundTrip(req)
 	if err != nil {
-		return fmt.Errorf("reading CONNECT response from %s failed: %s", req.URL, err)
+		return fmt.Errorf("writing CONNECT request to %s failed: %s", req.URL, err)
 	}
 	defer resp.Body.Close()
 
@@ -449,6 +447,7 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	}
 
 	c.ctrlWg.Wait() // wait until previous listenControl observes disconnection
+	<-connSet
 
 	c.session, err = yamux.Client(conn, c.yamuxConfig)
 	if err != nil {
@@ -495,14 +494,6 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	c.startNotifyIfNeeded()
 
 	return c.listenControl(ct)
-}
-
-func (c *Client) dial(serverAddr string) (net.Conn, error) {
-	if c.config.Dial != nil {
-		return c.config.Dial("tcp", serverAddr)
-	}
-
-	return net.Dial("tcp", serverAddr)
 }
 
 func (c *Client) listenControl(ct *control) error {
