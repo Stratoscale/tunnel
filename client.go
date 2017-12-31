@@ -8,10 +8,10 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"sync"
 	"sync/atomic"
 	"time"
-	"context"
 
 	"github.com/hashicorp/yamux"
 	"github.com/koding/logging"
@@ -406,25 +406,13 @@ func (c *Client) isRetry(state ClientState) bool {
 	return state != ClientStarted && state != ClientClosed
 }
 
-type dialFunc func (ctx context.Context, network, addr string) (net.Conn, error)
-
 func (c *Client) connect(identifier, serverAddr string) error {
 	remoteUrl := "https://" + serverAddr + controlPath
 	c.log.Debug("Trying to connect to %q with identifier %q", remoteUrl, identifier)
 	var (
-		conn net.Conn
+		conn    net.Conn
 		connSet = make(chan struct{})
 	)
-	wrap := func(inner dialFunc) dialFunc {
-		return func(ctx context.Context, network, addr string) (net.Conn, error) {
-			var err error
-			conn, err = inner(ctx, network, addr)
-			close(connSet)
-			return conn, err
-		}
-	}
-	transport := *c.config.Transport // copy transport
-	transport.DialContext = wrap(c.config.Transport.DialContext)
 
 	req, err := http.NewRequest("CONNECT", remoteUrl, nil)
 	if err != nil {
@@ -432,7 +420,18 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	}
 	req.Header.Set(xKTunnelIdentifier, identifier)
 
-	resp, err := transport.RoundTrip(req)
+	// Hijack the connection from the client.
+	// When the transport finishes the connection, we save the connection in a local
+	// variable Conn.
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			c.log.Debug("Got Conn: %+v", connInfo)
+			conn = connInfo.Conn
+			close(connSet)
+		},
+	}))
+
+	resp, err := c.config.Transport.RoundTrip(req)
 	if err != nil {
 		return fmt.Errorf("writing CONNECT request to %s failed: %s", req.URL, err)
 	}
@@ -448,7 +447,7 @@ func (c *Client) connect(identifier, serverAddr string) error {
 	}
 
 	c.ctrlWg.Wait() // wait until previous listenControl observes disconnection
-	<- connSet
+	<-connSet
 
 	c.session, err = yamux.Client(conn, c.yamuxConfig)
 	if err != nil {
