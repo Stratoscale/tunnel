@@ -140,7 +140,7 @@ type ClientConfig struct {
 	// Log defines the logger. If nil a default logging.Logger is used.
 	Log logging.Logger
 
-	Transport *http.Transport
+	Transport http.RoundTripper
 
 	// StateChanges receives state transition details each time client
 	// connection state changes. The channel is expected to be sufficiently
@@ -200,7 +200,7 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 	}
 
 	if cfg.Transport == nil {
-		cfg.Transport = http.DefaultTransport.(*http.Transport)
+		cfg.Transport = http.DefaultTransport
 	}
 
 	if err := cfg.verify(); err != nil {
